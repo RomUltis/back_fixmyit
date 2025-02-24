@@ -15,9 +15,9 @@ console.log("NodeJS démarre avec le host : ", process.env.HOST);
 
 const db = mysql.createConnection({
     host: process.env.DB_HOST || "127.0.0.1",
-    user: process.env.DB_USER || "john",
-    password: process.env.DB_PASS || "sox(t5ERGasP2JUl",
-    database: process.env.DB_NAME || "fixmyit"
+    user: process.env.DB_USER || "user",
+    password: process.env.DB_PASS || "mot de passe",
+    database: process.env.DB_NAME || "bdd"
 });
 
 db.connect(err => {
