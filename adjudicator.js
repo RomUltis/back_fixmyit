@@ -9,15 +9,15 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-const SECRET_KEY = "fixmyit_secret";
+const SECRET_KEY = "id";
 
 console.log("NodeJS démarre avec le host : ", process.env.HOST);
 
 const db = mysql.createConnection({
-    host: process.env.DB_HOST || "127.0.0.1",
-    user: process.env.DB_USER || "john",
-    password: process.env.DB_PASS || "sox(t5ERGasP2JUl",
-    database: process.env.DB_NAME || "fixmyit"
+    host: process.env.DB_HOST || "ip",
+    user: process.env.DB_USER || "user",
+    password: process.env.DB_PASS || "password",
+    database: process.env.DB_NAME || "bd"
 });
 
 db.connect(err => {
