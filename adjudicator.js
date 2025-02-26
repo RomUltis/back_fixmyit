@@ -9,14 +9,14 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-const SECRET_KEY = "fixmyit_secret";
+const SECRET_KEY = "ID";
 
 console.log("NodeJS démarre avec le host : ", process.env.HOST);
 
 const db = mysql.createConnection({
-    host: process.env.DB_HOST || "127.0.0.1",
+    host: process.env.DB_HOST || "ip",
     user: process.env.DB_USER || "user",
-    password: process.env.DB_PASS || "mot de passe",
+    password: process.env.DB_PASS || "password",
     database: process.env.DB_NAME || "bdd"
 });
 
@@ -28,7 +28,7 @@ db.connect(err => {
     console.log("Connecté à MySQL");
 });
 
-// 📌 Inscription
+// Inscription
 app.post('/register', (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) 
@@ -36,7 +36,7 @@ app.post('/register', (req, res) => {
 
     const hashedPassword = bcrypt.hashSync(password, 10);
 
-    // ✅ Ajout du rôle "user" par défaut lors de l'inscription
+    // Ajout du rôle "user" par défaut lors de l'inscription
     const role = 'user';
     db.query("INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)", [username, hashedPassword, role], (err, result) => {
         if (err) {
@@ -47,7 +47,7 @@ app.post('/register', (req, res) => {
     });
 });
 
-// 📌 Connexion
+// Connexion
 app.post('/login', (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) 
@@ -63,13 +63,21 @@ app.post('/login', (req, res) => {
         if (!bcrypt.compareSync(password, user.password_hash)) 
             return res.status(401).json({ success: false, message: "Identifiants incorrects" });
 
-        // ✅ Le token contient l'ID et le rôle de l'utilisateur
+        // Le token contient l'ID et le rôle de l'utilisateur
         const token = jwt.sign({ id: user.id, role: user.role }, SECRET_KEY, { expiresIn: "2h" });
-        res.json({ success: true, role: user.role, token });
+        
+        // Envoi du rôle et de l'ID utilisateur dans la réponse
+        res.json({ 
+            success: true, 
+            role: user.role,
+            userId: user.id, 
+            token 
+        });
     });
 });
 
-// 📌 Création d'un ticket
+
+// Création d'un ticket
 app.post('/tickets', (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) 
@@ -98,7 +106,7 @@ app.post('/tickets', (req, res) => {
     });
 });
 
-// 📌 Récupération des tickets
+// Récupération de tous les tickets
 app.get('/tickets', (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) 
@@ -112,7 +120,7 @@ app.get('/tickets', (req, res) => {
         const userRole = user.role;
         const userId = user.id;
 
-        // ✅ Utilisation d'un LEFT JOIN pour afficher le username
+        // Utilisation d'un LEFT JOIN pour afficher le username
         let sql = `
             SELECT tickets.id, tickets.description, tickets.status, users.username as user_name
             FROM tickets
@@ -120,14 +128,11 @@ app.get('/tickets', (req, res) => {
         `;
         let params = [];
 
-        // ✅ Filtrage des tickets en fonction du rôle
+        // Filtrage des tickets en fonction du rôle
         if (userRole !== 'admin') {
             sql += " WHERE tickets.user_id = ?";
             params = [userId];
         }
-
-        console.log('Requête SQL:', sql);  // 🔥 Debug: Affiche la requête SQL exécutée
-        console.log('Params:', params);    // 🔥 Debug: Affiche les paramètres
 
         db.query(sql, params, (err, results) => {
             if (err) {
@@ -139,7 +144,242 @@ app.get('/tickets', (req, res) => {
     });
 });
 
-// ✅ Page de test pour vérifier si le serveur tourne
+// Récupération des détails d'un ticket spécifique
+app.get('/tickets/:id', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) 
+        return res.status(401).json({ success: false, message: 'Token manquant' });
+
+    const token = authHeader.split(' ')[1];
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+        if (err) 
+            return res.status(403).json({ success: false, message: 'Token invalide' });
+
+        const ticketId = req.params.id;
+        const sql = `
+            SELECT tickets.id, tickets.description, tickets.status, users.username as user_name
+            FROM tickets
+            LEFT JOIN users ON tickets.user_id = users.id
+            WHERE tickets.id = ?
+        `;
+
+        db.query(sql, [ticketId], (err, results) => {
+            if (err) {
+                console.error("Erreur lors de la récupération du ticket:", err);
+                return res.status(500).json({ success: false, message: 'Erreur lors de la récupération du ticket' });
+            }
+            if (results.length === 0) {
+                return res.status(404).json({ success: false, message: 'Ticket non trouvé' });
+            }
+            res.json(results[0]);
+        });
+    });
+});
+
+// Mise à jour du statut d'un ticket
+app.put('/tickets/:id', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) 
+        return res.status(401).json({ success: false, message: 'Token manquant' });
+
+    const token = authHeader.split(' ')[1];
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+        if (err) 
+            return res.status(403).json({ success: false, message: 'Token invalide' });
+
+        const userRole = user.role;
+        const ticketId = req.params.id;
+        const nouveauStatut = req.body.status;
+
+        console.log("Adjudicator PUT - Ticket ID:", ticketId);
+        console.log("Adjudicator PUT - Nouveau Statut:", nouveauStatut);
+
+        // Seuls les admins peuvent changer le statut
+        if (userRole !== 'admin') {
+            return res.status(403).json({ success: false, message: 'Accès refusé. Seuls les admins peuvent changer le statut.' });
+        }
+
+        const sql = "UPDATE tickets SET status = ? WHERE id = ?";
+        db.query(sql, [nouveauStatut, ticketId], (err, result) => {
+            if (err) {
+                console.error("Erreur lors de la mise à jour du statut:", err);
+                return res.status(500).json({ success: false, message: 'Erreur lors de la mise à jour du statut' });
+            }
+            res.json({ success: true, message: 'Statut mis à jour avec succès' });
+        });
+    });
+});
+
+
+// Suppression d'un ticket (Réservée aux admins)
+app.delete('/tickets/:id', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) 
+        return res.status(401).json({ success: false, message: 'Token manquant' });
+
+    const token = authHeader.split(' ')[1];
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+        if (err) 
+            return res.status(403).json({ success: false, message: 'Token invalide' });
+
+        const userRole = user.role;
+        const ticketId = req.params.id;
+
+        // Seuls les admins peuvent supprimer un ticket
+        if (userRole !== 'admin') {
+            return res.status(403).json({ success: false, message: 'Accès refusé. Seuls les admins peuvent supprimer un ticket.' });
+        }
+
+        const sql = "DELETE FROM tickets WHERE id = ?";
+        db.query(sql, [ticketId], (err, result) => {
+            if (err) {
+                console.error("Erreur lors de la suppression du ticket:", err);
+                return res.status(500).json({ success: false, message: 'Erreur lors de la suppression du ticket' });
+            }
+            res.json({ success: true, message: 'Ticket supprimé avec succès' });
+        });
+    });
+});
+
+// Middleware pour vérifier le token et récupérer l'utilisateur
+function authentification(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) 
+        return res.status(401).json({ success: false, message: 'Token manquant' });
+
+    const token = authHeader.split(' ')[1];
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+        if (err) 
+            return res.status(403).json({ success: false, message: 'Token invalide' });
+
+        req.user = user;
+        next();
+    });
+}
+
+// Exemple d'utilisation du middleware
+app.get('/protected', authentification, (req, res) => {
+    res.json({ success: true, message: 'Accès autorisé', user: req.user });
+});
+
+// Création d'un nouveau ticket
+app.post('/tickets', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) 
+        return res.status(401).json({ success: false, message: 'Token manquant' });
+
+    const token = authHeader.split(' ')[1];
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+        if (err) 
+            return res.status(403).json({ success: false, message: 'Token invalide' });
+
+        const userRole = user.role;
+        const userId = user.id;
+        const { title, description } = req.body;
+
+        // Seuls les utilisateurs lambda peuvent créer un ticket
+        if (userRole !== 'user') {
+            return res.status(403).json({ success: false, message: 'Accès refusé. Seuls les utilisateurs lambda peuvent créer un ticket.' });
+        }
+
+        const sql = "INSERT INTO tickets (title, description, user_id, status) VALUES (?, ?, ?, 'En attente')";
+        db.query(sql, [title, description, userId], (err, result) => {
+            if (err) {
+                console.error("Erreur lors de la création du ticket:", err);
+                return res.status(500).json({ success: false, message: 'Erreur lors de la création du ticket' });
+            }
+            res.json({ success: true, message: 'Ticket créé avec succès' });
+        });
+    });
+});
+
+// Suppression d'un ticket
+app.delete('/tickets/:id', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) 
+        return res.status(401).json({ success: false, message: 'Token manquant' });
+
+    const token = authHeader.split(' ')[1];
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+        if (err) 
+            return res.status(403).json({ success: false, message: 'Token invalide' });
+
+        const userRole = user.role;
+        const ticketId = req.params.id;
+
+        console.log("Adjudicator DELETE - Ticket ID:", ticketId);
+
+        // Seuls les admins peuvent supprimer un ticket
+        if (userRole !== 'admin') {
+            return res.status(403).json({ success: false, message: 'Accès refusé. Seuls les admins peuvent supprimer un ticket.' });
+        }
+
+        const sql = "DELETE FROM tickets WHERE id = ?";
+        db.query(sql, [ticketId], (err, result) => {
+            if (err) {
+                console.error("Erreur lors de la suppression du ticket:", err);
+                return res.status(500).json({ success: false, message: 'Erreur lors de la suppression du ticket' });
+            }
+            if (result.affectedRows === 0) {
+                return res.status(404).json({ success: false, message: 'Ticket non trouvé' });
+            }
+            res.json({ success: true, message: 'Ticket supprimé avec succès' });
+        });
+    });
+});
+
+// Récupération des messages pour un ticket
+app.get('/tickets/:id/messages', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) 
+        return res.status(401).json({ success: false, message: 'Token manquant' });
+
+    const token = authHeader.split(' ')[1];
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+        if (err) 
+            return res.status(403).json({ success: false, message: 'Token invalide' });
+
+        const ticketId = req.params.id;
+
+        const sql = "SELECT m.*, u.username AS sender_name FROM messages m JOIN users u ON m.sender_id = u.id WHERE ticket_id = ? ORDER BY timestamp ASC";
+        db.query(sql, [ticketId], (err, result) => {
+            if (err) {
+                console.error("Erreur lors de la récupération des messages:", err);
+                return res.status(500).json({ success: false, message: 'Erreur lors de la récupération des messages' });
+            }
+            res.json({ success: true, messages: result });
+        });
+    });
+});
+
+// Envoi d'un nouveau message
+app.post('/tickets/:id/messages', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) 
+        return res.status(401).json({ success: false, message: 'Token manquant' });
+
+    const token = authHeader.split(' ')[1];
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+        if (err) 
+            return res.status(403).json({ success: false, message: 'Token invalide' });
+
+        const userId = user.id;
+        const ticketId = req.params.id;
+        const { message } = req.body;
+
+        const sql = "INSERT INTO messages (ticket_id, sender_id, message) VALUES (?, ?, ?)";
+        db.query(sql, [ticketId, userId, message], (err, result) => {
+            if (err) {
+                console.error("Erreur lors de l'envoi du message:", err);
+                return res.status(500).json({ success: false, message: 'Erreur lors de l\'envoi du message' });
+            }
+            res.json({ success: true, message: 'Message envoyé avec succès' });
+        });
+    });
+});
+
+
+// Page de test pour vérifier si le serveur tourne
 app.get('/', (req, res) => {
     res.send('Le serveur adjudicator fonctionne correctement.');
 });
