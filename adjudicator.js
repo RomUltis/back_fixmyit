@@ -9,15 +9,15 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-const SECRET_KEY = "ID";
+const SECRET_KEY = "fixmyit_secret";
 
 console.log("NodeJS démarre avec le host : ", process.env.HOST);
 
 const db = mysql.createConnection({
-    host: process.env.DB_HOST || "ip",
-    user: process.env.DB_USER || "user",
-    password: process.env.DB_PASS || "password",
-    database: process.env.DB_NAME || "bdd"
+    host: process.env.DB_HOST || "127.0.0.1",
+    user: process.env.DB_USER || "john",
+    password: process.env.DB_PASS || "sox(t5ERGasP2JUl",
+    database: process.env.DB_NAME || "fixmyit"
 });
 
 db.connect(err => {
@@ -293,40 +293,51 @@ app.post('/tickets', (req, res) => {
     });
 });
 
-// Suppression d'un ticket
+// Endpoint pour supprimer un ticket et ses messages
 app.delete('/tickets/:id', (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) 
-        return res.status(401).json({ success: false, message: 'Token manquant' });
+    const ticketId = req.params.id;
 
-    const token = authHeader.split(' ')[1];
-    jwt.verify(token, SECRET_KEY, (err, user) => {
-        if (err) 
-            return res.status(403).json({ success: false, message: 'Token invalide' });
+    // Vérification du rôle de l'utilisateur
+    const token = req.headers.authorization.split(' ')[1];
+    const decodedToken = jwt.verify(token, SECRET_KEY);
+    if (decodedToken.role !== 'admin') {
+        return res.status(403).json({ message: 'Accès refusé' });
+    }
 
-        const userRole = user.role;
-        const ticketId = req.params.id;
+    console.log('Tentative de suppression du ticket ID:', ticketId);
 
-        console.log("Adjudicator DELETE - Ticket ID:", ticketId);
+    // Suppression des messages liés au ticket
+    const deleteMessagesQuery = `DELETE FROM messages WHERE ticket_id = ?`;
 
-        // Seuls les admins peuvent supprimer un ticket
-        if (userRole !== 'admin') {
-            return res.status(403).json({ success: false, message: 'Accès refusé. Seuls les admins peuvent supprimer un ticket.' });
+    db.query(deleteMessagesQuery, [ticketId], (err, result) => {
+        if (err) {
+            console.error('Erreur lors de la suppression des messages:', err);
+            return res.status(500).json({ 
+                message: 'Erreur lors de la suppression des messages',
+                error: err
+            });
         }
 
-        const sql = "DELETE FROM tickets WHERE id = ?";
-        db.query(sql, [ticketId], (err, result) => {
+        console.log('Messages supprimés pour le ticket ID:', ticketId);
+
+        // Suppression du ticket après avoir supprimé les messages
+        const deleteTicketQuery = `DELETE FROM tickets WHERE id = ?`;
+
+        db.query(deleteTicketQuery, [ticketId], (err, result) => {
             if (err) {
-                console.error("Erreur lors de la suppression du ticket:", err);
-                return res.status(500).json({ success: false, message: 'Erreur lors de la suppression du ticket' });
+                console.error('Erreur lors de la suppression du ticket:', err);
+                return res.status(500).json({ 
+                    message: 'Erreur lors de la suppression du ticket',
+                    error: err
+                });
             }
-            if (result.affectedRows === 0) {
-                return res.status(404).json({ success: false, message: 'Ticket non trouvé' });
-            }
-            res.json({ success: true, message: 'Ticket supprimé avec succès' });
+
+            console.log('Ticket supprimé avec succès:', ticketId);
+            res.status(200).json({ message: 'Ticket supprimé avec succès' });
         });
     });
 });
+
 
 // Récupération des messages pour un ticket
 app.get('/tickets/:id/messages', (req, res) => {
