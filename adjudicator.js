@@ -9,15 +9,21 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-const SECRET_KEY = "id";
+const SECRET_KEY = process.env.SECRET_KEY;
 
-console.log("NodeJS démarre avec le host : ", process.env.HOST);
+if (!SECRET_KEY) {
+    console.error("SECRET_KEY non défini dans le fichier .env");
+    process.exit(1);
+}
 
+console.log("NodeJS démarre avec le host : ", process.env.DB_HOST);
+
+// Configuration de la connexion à la base de données
 const db = mysql.createConnection({
-    host: process.env.DB_HOST || "ip",
-    user: process.env.DB_USER || "user",
-    password: process.env.DB_PASS || "password",
-    database: process.env.DB_NAME || "bd"
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASS,
+    database: process.env.DB_NAME
 });
 
 db.connect(err => {
@@ -27,6 +33,7 @@ db.connect(err => {
     }
     console.log("Connecté à MySQL");
 });
+
 
 // Inscription
 app.post('/register', (req, res) => {
@@ -389,7 +396,6 @@ app.post('/tickets/:id/messages', (req, res) => {
     });
 });
 
-
 // Page de test pour vérifier si le serveur tourne
 app.get('/', (req, res) => {
     res.send('Le serveur adjudicator fonctionne correctement.');
@@ -397,5 +403,5 @@ app.get('/', (req, res) => {
 
 // Lancer le serveur
 app.listen(56161, () => {
-    console.log("🚀 Serveur adjudicator en cours d'exécution sur le port 56161");
+    console.log("🚀 Serveur back en cours d'exécution sur le port 56161");
 });
